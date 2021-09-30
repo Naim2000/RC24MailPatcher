@@ -18,7 +18,7 @@ include $(DEVKITPPC)/wii_rules
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
 SOURCES		:=	source source/network
-DATA		:=	data  
+DATA		:=	data
 INCLUDES	:=
 
 #---------------------------------------------------------------------------------
@@ -39,13 +39,13 @@ endif
 #---------------------------------------------------------------------------------
 # any extra libraries we wish to link with the project
 #---------------------------------------------------------------------------------
-LIBS	:=	-lwiiuse -lbte -logc -lm
+LIBS	:=	-lcurl -lwiisocket -lmbedtls -lmbedcrypto -lmbedx509 -lwiiuse -lbte -logc -lm -lz
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:=
+LIBDIRS	:= $(PORTLIBS)
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional
@@ -135,6 +135,11 @@ $(OFILES_SOURCES) : $(HFILES)
 #---------------------------------------------------------------------------------
 %.jpg.o	%_jpg.h :	%.jpg
 #---------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------
+ # This rule links in binary data with the .pem extension
+ #---------------------------------------------------------------------------------
+ %.pem.o	%_pem.h :	%.pem
+ #---------------------------------------------------------------------------------
 	@echo $(notdir $<)
 	$(bin2o)
 

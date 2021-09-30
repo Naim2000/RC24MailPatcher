@@ -8,7 +8,6 @@
 
 typedef enum {
   RESPONSE_NOTINIT = 0,
-
   RESPONSE_OK = 100,
   RESPONSE_INVALID = 610,
   RESPONSE_AREGISTERED = 211,
@@ -39,17 +38,7 @@ typedef struct {
   u8 filehash[0x14];
 } contentMapObject;
 
-unsigned int calcChecksum(char *buffer, int length);
 s64 getFriendCode();
-
-s32 getSystemMenuVersion();
-s32 getSystemMenuIOS(const s32 systemMenuVersion);
-
-void patchNWC24MSG(unionNWC24MSG *unionFile, char passwd[0x20], char mlchkid[0x24]);
 s32 patchMail();
-
-s32 patchContentMap();
-
-s32 patchIOSHash();
 
 #endif

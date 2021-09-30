@@ -115,21 +115,3 @@ bool NAND_IsFilePresent(const char* filePath) {
         return true;
     }
 }
-
-s32 NAND_GetFileSize(const char* filePath, u32* fileSize) {
-    if (!isNANDInitialised) return -1;
-
-    s32 file = ISFS_Open(filePath, ISFS_OPEN_READ);
-    if (file < 0) return file;
-
-    fstats* fileStats = memalign(32, sizeof(fstats));
-    s32 error = ISFS_GetFileStats(file, fileStats);
-    if (error < 0) return error;
-
-    error = ISFS_Close(file);
-    if (error < 0) return error;
-
-    *fileSize = fileStats->file_length;
-
-    return 0;
-}

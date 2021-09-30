@@ -1,9 +1,10 @@
 #include "patcher.h"
 #include "config.h"
-#include "nand.h"
 #include "network.h"
+#include "nand.h"
 #include "network/picohttpparser.h"
 #include <malloc.h>
+
 
 unsigned int calcChecksum(char* buffer, int length) {
     int totalChecksum = 0;
@@ -30,58 +31,6 @@ s64 getFriendCode() {
     return fc;
 }
 
-s32 getSystemMenuVersion() {
-    // Get the system menu tmd
-    s32 systemMenuVersion;
-    u32 tmdSize;
-    s32 error = __ES_Init();
-    if (error < 0) return error;
-
-    error = ES_GetStoredTMDSize(0x0000000100000002, &tmdSize);
-    if (error < 0) return error;
-
-    signed_blob* tmdContent = memalign(32, tmdSize);
-    char tmdContentBuffer[tmdSize], titleVersionChar[5] = "";
-    error = ES_GetStoredTMD(0x0000000100000002, tmdContent, tmdSize);
-    if (error < 0) return error;
-
-    memcpy(tmdContentBuffer, tmdContent, tmdSize);
-    snprintf(titleVersionChar, 5, "%.2x%.2x", tmdContentBuffer[0x1DC], tmdContentBuffer[0x1DD]);
-    systemMenuVersion = strtol(titleVersionChar, NULL, 16);
-
-    error = __ES_Close();
-    if (error < 0) return error;
-
-    return systemMenuVersion;
-}
-
-s32 getSystemMenuIOS(const s32 systemMenuVersion) {
-    const s32 smv = systemMenuVersion;
-
-    if (smv == 33)
-        return 9;
-    else if (smv == 128 || smv == 97 || smv == 130 || smv == 162)
-        return 11;
-    else if (smv >= 192 && smv <= 194)
-        return 20;
-    else if ((smv >= 224 && smv <= 290) || (smv >= 352 && smv <= 354))
-        return 30;
-    else if (smv == 326)
-        return 40;
-    else if (smv >= 384 && smv <= 386)
-        return 50;
-    else if (smv == 390)
-        return 52;
-    else if (smv >= 416 && smv <= 454)
-        return 60;
-    else if (smv >= 480 && smv <= 486)
-        return 70;
-    else if (smv >= 512 && smv <= 518)
-        return 80;
-
-    return -1;
-}
-
 void patchNWC24MSG(unionNWC24MSG* unionFile, char passwd[0x20], char mlchkid[0x24]) {
     // Patch mail domain
     strcpy(unionFile->structNWC24MSG.mailDomain, BASE_MAIL_URL);
@@ -93,7 +42,7 @@ void patchNWC24MSG(unionNWC24MSG* unionFile, char passwd[0x20], char mlchkid[0x2
     // Patch the URLs
     const char engines[0x5][0x80] = { "account", "check", "receive", "delete", "send" };
     for (int i = 0; i < 5; i++) {
-        char formattedLink[0x80] = "";
+        char formattedLink[0x80];
         for (int i = 0; i < sizeof(formattedLink); i++)
         {
             formattedLink[i] = '\0';
@@ -101,7 +50,7 @@ void patchNWC24MSG(unionNWC24MSG* unionFile, char passwd[0x20], char mlchkid[0x2
         strncpy(unionFile->structNWC24MSG.urls[i], formattedLink, sizeof(formattedLink));
     }
     for (int i = 0; i < 5; i++) {
-        char formattedLink[0x80] = "";
+        char formattedLink[0x80];
         sprintf(formattedLink, "http://%s/cgi-bin/%s.cgi", BASE_HTTP_URL, engines[i]);
         strcpy(unionFile->structNWC24MSG.urls[i], formattedLink);
     }
@@ -116,7 +65,7 @@ void patchNWC24MSG(unionNWC24MSG* unionFile, char passwd[0x20], char mlchkid[0x2
 
 s32 patchMail() {
     // Read the nwc24msg.cfg file
-    static char fileBufferNWC24MSG[0x400] = "";
+    static char fileBufferNWC24MSG[0x400];
     unionNWC24MSG fileUnionNWC24MSG;
 
     s32 error = NAND_ReadFile("/shared2/wc24/nwc24msg.cfg", fileBufferNWC24MSG, 0x400);
@@ -153,13 +102,17 @@ s32 patchMail() {
         return fc;
     }
 
+
     // Request for a passwd/mlchkid
-    char response[2048] = "";
-    sprintf(response, "mlid=w%016lli", fc);
-    error = postRequest(BASE_PATCH_URL, "/cgi-bin/patcher.cgi", 80, &response, sizeof(response));
-    
-	// 
-	if (error == -24) {
+    char arg[30];
+    sprintf(arg, "mlid=w%016lli", fc);
+    char url[128];
+    sprintf(url, "https://%s/cgi-bin/patcher.cgi", BASE_PATCH_URL);
+    char *response = (char *)malloc(2048);
+    error = post_request(url, arg, &response);
+
+    // cURL error code 6 could also mean the host doesn't exists, but we know for a fact it does.
+	if (error == 6) {
 		printf(":--------------------------------------------------------:");
 		printf("\n: There is no Internet connection.                       :");
 		printf("\n: Please check if your Wii is connected to the Internet. :");
@@ -171,7 +124,7 @@ s32 patchMail() {
 	if (error < 0) {
 		return error;
 	}
-	if (error < 0 && error != -24) {
+	if (error < 0 && error != 6) {
         printf(":-----------------------------------------:\n");
         printf(" Couldn't request the data: %i\n", error);
         printf(":-----------------------------------------:\n\n");

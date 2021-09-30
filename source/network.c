@@ -1,169 +1,92 @@
-#include "network.h"
-#include "network/ssl.h"
+#include "cacert_pem.h"
+#include <curl/curl.h>
+#include <gccore.h>
+#include <assert.h>
+#include <mbedtls/ssl.h>
+#include <mbedtls/x509.h>
+#include "patcher.h"
 
-s32 doRequest(const void* hostname, const void* path, const u16 port, void* buffer, u32 length, const char* requestType) {
-    s32 error = net_get_status();
-    if (error < 0) {
-        printf("net_get_status: %i\n", error);
-        return error;
+// Override CA certificate with those bundled from cacert.pem.
+// A message from Spotlight: TODO: This is very broken.
+static CURLcode ssl_ctx_callback(CURL *curl, void *ssl_ctx, void *userptr) {
+    mbedtls_ssl_config *config = (mbedtls_ssl_config *)ssl_ctx;
+    mbedtls_ssl_conf_ca_chain(config, (mbedtls_x509_crt *)userptr, NULL);
+
+    return CURLE_OK;
+}
+
+struct MemoryStruct {
+    char *memory;
+    size_t size;
+};
+
+static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb,
+                                  void *userp) {
+    size_t realsize = size * nmemb;
+    struct MemoryStruct *mem = (struct MemoryStruct *)userp;
+
+    char *ptr = (char *)realloc(mem->memory, mem->size + realsize + 1);
+    if (!ptr) {
+        /* out of memory! */
+        printf("not enough memory (realloc returned NULL)\n");
+        return 1;
     }
 
-    struct hostent* dns;
-    dns = net_gethostbyname(hostname);
-    if (dns->h_length <= 0) {
-        printf("net_gethostbyname: couldn't get the address\n");
-        return -1;
-    }
+    mem->memory = ptr;
+    memcpy(&(mem->memory[mem->size]), contents, realsize);
+    mem->size += realsize;
+    mem->memory[mem->size] = 0;
 
-    struct sockaddr_in sin;
-    s32 sock = net_socket(AF_INET, SOCK_STREAM, 0);
+    return realsize;
+}
 
-    memcpy(&sin.sin_addr.s_addr, dns->h_addr, dns->h_length);
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(port);
+s32 post_request(char *url, char *post_arguments, char **response) {
+    CURL *curl;
+    CURLcode res;
 
-    net_connect(sock, (struct sockaddr*)&sin, sizeof(sin));
+    struct MemoryStruct chunk;
+    chunk.memory = (char *)malloc(4);
+    chunk.size = 0;
 
-    char response[length];
-    memset(response, 0, length);
-    char request[300] = "";
-    sprintf(request, "%s %s HTTP/1.1\r\n\
-User-Agent: WiiPatcher/1.0 (Nintendo Wii)\r\n\
-Host: %s\r\n\
-Content-Type: application/x-www-form-urlencoded\r\n\
-Content-Length: %i\r\n\
-Cache-Control: no-cache\r\n\r\n%s",
-            requestType, (char*)path, (char*)hostname, strlen(buffer), (char*)buffer);
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl = curl_easy_init();
 
-    if (port == 443) {
-        error = ssl_init();
-        if (error < 0) {
-            printf("ssl_init: error %i", error);
-            net_close(sock);
-            return error;
-        }
+    struct curl_slist *headers=NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
 
-        s32 sslContext = ssl_new((u8*)hostname, 0);
-        if (sslContext < 0) {
-            printf("ssl_new: error %i\n", error);
-            net_close(sock);
-            return error;
-        }
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "WiiPatcher/1.0 (Nintendo Wii)");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_arguments);
 
-        error = ssl_setbuiltinclientcert(sslContext, 0);
-        if (error < 0) {
-            printf("ssl_setbuiltinclientcert: error %i\n", error);
-            ssl_shutdown(sslContext);
-            net_close(sock);
-            return error;
-        }
-
-        error = ssl_connect(sslContext, sock);
-        if (error < 0) {
-            printf("ssl_connect: error %i\n", error);
-            ssl_shutdown(sslContext);
-            net_close(sock);
-            return error;
-        }
-
-        error = ssl_handshake(sslContext);
-        if (error < 0) {
-            printf("ssl_handshake: error %i\n", error);
-            ssl_shutdown(sslContext);
-            net_close(sock);
-            return error;
-        }
-
-        error = ssl_write(sslContext, request, sizeof(request));
-        if (error < 0) {
-            printf("ssl_write: error %i\n", error);
-            ssl_shutdown(sslContext);
-            net_close(sock);
-            return error;
-        }
-
-        error = ssl_read(sslContext, response, length);
-        if (error < 0) {
-            printf("ssl_read: error %i\n", error);
-            ssl_shutdown(sslContext);
-            net_close(sock);
-            return error;
-        }
-
-        ssl_shutdown(sslContext);
-    } else {
-        error = net_send(sock, request, sizeof(request), 0);
-        
-		if (error == -128) {
-		printf(":--------------------------------------------------------:");
-		printf("\n: RiiConnect24 Servers are currently offline.            :");
-		printf("\n: Please check back later!                               :");
-		printf("\n:                                                        :");
-		printf("\n: Visit https://status.rc24.xyz for more info.           :");
-		printf("\n:--------------------------------------------------------:\n\n");
-		return error;
-		}
-		
-		if (error < 0) {
-            printf("net_send: error %i\n", error);
-            net_close(sock);
-            return error;
-        }
-
-        error = net_recv(sock, response, length, 0);
-        if (error < 0) {
-            printf("net_recv: error %i\n", error);
-            net_close(sock);
-            return error;
-        }
-    }
-
-    int minor_version;
-    int status;
-    const char* msg;
-    size_t msg_len;
-    struct phr_header headers[20];
-    size_t num_headers;
-
-    num_headers = sizeof(headers) / sizeof(headers[0]);
-    int ret = phr_parse_response(response, strlen(response), &minor_version, &status, &msg,
-                                 &msg_len, headers, &num_headers, 0);
+    // Set CA certificate
+    static mbedtls_x509_crt cacert;
+    mbedtls_x509_crt_init(&cacert);
+    s32 ret = mbedtls_x509_crt_parse(
+    &cacert, (const unsigned char *)&cacert_pem, cacert_pem_size);
     if (ret < 0) {
-        printf("phr_parse_response: error %i\n", ret);
-        net_close(sock);
-        return error;
+        printf(":-----------------------------------------:\n");
+        printf("Setting SSL certificate failed: %d\n", ret);
+        printf(":-----------------------------------------:\n\n");
+        return ret;
     }
 
-    if (status != 200) {
-        printf("The request wasn't successful: %i\n", status);
-        return 0 - status;
+    curl_easy_setopt(curl, CURLOPT_SSL_CTX_DATA, &cacert);
+    curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, ssl_ctx_callback);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+
+    res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        return (s32)res;
     }
 
-    if (strcmp(requestType, "GET") == 0) {
-        const char* body = &msg[ret];
-        memcpy(buffer, body, length);
-    } else if (strcmp(requestType, "POST") == 0) {
-        memcpy(buffer, response + ret, length);
-    }
+    curl_easy_cleanup(curl);
+    curl_slist_free_all(headers);
 
-    net_close(sock);
+    curl_global_cleanup();
 
+    *response = chunk.memory;
     return 0;
-}
-
-s32 getRequest(const void* hostname, const void* path, const u16 port, void* buffer, u32 length) {
-    return doRequest(hostname, path, port, buffer, length, "GET");
-}
-
-s32 postRequest(const void* hostname, const void* path, const u16 port, void* buffer, u32 length) {
-    return doRequest(hostname, path, port, buffer, length, "POST");
-}
-
-bool initNetwork() {
-    bool ok = false;
-
-    for (int i = 0; i < 50 && !ok; i++)
-        if (net_init() >= 0) ok = true;
-
-    return ok;
 }
