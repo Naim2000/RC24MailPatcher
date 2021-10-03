@@ -26,8 +26,8 @@ int main(void) {
     wiisocket_init();
 
 	char version_major = 1;
-	char version_minor = 3;
-    char version_patch = 4;
+	char version_minor = 4;
+    char version_patch = 0;
 
 	printf("\n:---------------------------------------------------------:\n");
 	printf("  RiiConnect24 Mail Patcher - (C) RiiConnect24 ");
