@@ -8,6 +8,12 @@ jobs:
     timeout-minutes: 20
     container: devkitpro/devkitppc
     steps:
+      - name: Download ppc-libcurl and other deps
+        run:  |
+          curl https://gitlab.com/4TU/wii-packages/uploads/686f898638fb96af55e3754b92c5aaa7/libwiisocket-0.1-1-any.pkg.tar.zst -o libwiisocket-0.1-1-any.pkg.tar.zst
+          curl https://gitlab.com/4TU/wii-packages/uploads/fc3378553929e58a397df6ec6204a1c0/wii-mbedtls-2.16.6-1-any.pkg.tar.zst -o wii-mbedtls-2.16.6-1-any.pkg.tar.zst
+          curl https://gitlab.com/4TU/wii-packages/uploads/2b19acc728140dcfbbf7e18f9d9e312a/wii-curl-7.75.0-1-any.pkg.tar.zst -o wii-curl-7.75.0-1-any.pkg.tar.zst
+          dkp-pacman -U libwiisocket-0.1-1-any.pkg.tar.zst wii-mbedtls-2.16.6-1-any.pkg.tar.zst wii-curl-7.75.0-1-any.pkg.tar.zst --noconfirm
       - uses: actions/checkout@v1
       - name: Build
         run: make
