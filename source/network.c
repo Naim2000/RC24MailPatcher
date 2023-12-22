@@ -6,6 +6,8 @@
 #include <mbedtls/x509.h>
 #include "patcher.h"
 
+static char curl_errorbuffer[CURL_ERROR_SIZE];
+
 // Override CA certificate with those bundled from cacert.pem.
 // A message from Spotlight: TODO: This is very broken.
 static CURLcode ssl_ctx_callback(CURL *curl, void *ssl_ctx, void *userptr) {
@@ -55,6 +57,8 @@ s32 post_request(char *url, char *post_arguments, char **response) {
     headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, curl_errorbuffer);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "WiiPatcher/1.0 (Nintendo Wii)");
@@ -77,8 +81,12 @@ s32 post_request(char *url, char *post_arguments, char **response) {
     curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, ssl_ctx_callback);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
 
+    curl_errorbuffer[0] = 0;
     res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
+        if (!curl_errorbuffer[0])
+            sprintf(curl_errorbuffer, "%s", curl_easy_strerror(res));
+
         return (s32)res;
     }
 
@@ -89,4 +97,8 @@ s32 post_request(char *url, char *post_arguments, char **response) {
 
     *response = chunk.memory;
     return 0;
+}
+
+const char *cURL_GetLastError(void) {
+    return curl_errorbuffer;
 }

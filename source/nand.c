@@ -4,12 +4,20 @@
 static bool isNANDInitialised = false;
 
 bool isDolphin(void) {
-    s32 checkDolphin;
-    checkDolphin = IOS_Open("/dev/dolphin", IPC_OPEN_NONE);
-    if (checkDolphin >= 0) 
+    s32 ret;
+
+    s32 fd = ret = IOS_Open("/dev/sha", 0);
+    if (ret < 0)
         return true;
-    else 
+
+    IOS_Close(fd);
+
+    fd = ret = IOS_Open("/dev/dolphin", 0);
+    if (ret < 0)
         return false;
+
+    IOS_Close(fd);
+    return true;
 }
 
 

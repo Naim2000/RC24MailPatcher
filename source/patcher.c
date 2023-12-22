@@ -40,19 +40,10 @@ void patchNWC24MSG(unionNWC24MSG* unionFile, char passwd[0x20], char mlchkid[0x2
     strcpy(unionFile->structNWC24MSG.mlchkid, mlchkid);
 
     // Patch the URLs
-    const char engines[0x5][0x80] = { "account", "check", "receive", "delete", "send" };
+    const char *engines[] = { "account", "check", "receive", "delete", "send" };
     for (int i = 0; i < 5; i++) {
-        char formattedLink[0x80];
-        for (int i = 0; i < sizeof(formattedLink); i++)
-        {
-            formattedLink[i] = '\0';
-        }
-        strncpy(unionFile->structNWC24MSG.urls[i], formattedLink, sizeof(formattedLink));
-    }
-    for (int i = 0; i < 5; i++) {
-        char formattedLink[0x80];
-        sprintf(formattedLink, "http://%s/cgi-bin/%s.cgi", BASE_HTTP_URL, engines[i]);
-        strcpy(unionFile->structNWC24MSG.urls[i], formattedLink);
+        memset(unionFile->structNWC24MSG.urls[i], 0, sizeof(unionFile->structNWC24MSG.urls[i]));
+        sprintf(unionFile->structNWC24MSG.urls[i], "http://%s/cgi-bin/%s.cgi", BASE_HTTP_URL, engines[i]);
     }
 
     // Patch the title booting
@@ -65,25 +56,24 @@ void patchNWC24MSG(unionNWC24MSG* unionFile, char passwd[0x20], char mlchkid[0x2
 
 s32 patchMail() {
     // Read the nwc24msg.cfg file
-    static char fileBufferNWC24MSG[0x400];
     unionNWC24MSG fileUnionNWC24MSG;
-
-    s32 error = NAND_ReadFile("/shared2/wc24/nwc24msg.cfg", fileBufferNWC24MSG, 0x400);
+    s32 error = NAND_ReadFile("/shared2/wc24/nwc24msg.cfg", fileUnionNWC24MSG.charNWC24MSG, sizeof(fileUnionNWC24MSG));
     if (error < 0) {
         printf(":-----------------------------------------:\n");
         printf(": The nwc24msg.cfg file couldn't be read. :\n");
         printf(":-----------------------------------------:\n\n");
         return error;
     }
-    memcpy(&fileUnionNWC24MSG, fileBufferNWC24MSG, 0x400);
 
     // Separate the file magic and checksum
     unsigned int oldChecksum = fileUnionNWC24MSG.structNWC24MSG.checksum;
     unsigned int calculatedChecksum = calcChecksum(fileUnionNWC24MSG.charNWC24MSG, 0x3FC);
 
     // Check the file magic and checksum
-    if (strcmp(fileUnionNWC24MSG.structNWC24MSG.magic, "WcCf") != 0) {
-        printf("The file couldn't be verified\n");
+    if (memcmp(fileUnionNWC24MSG.structNWC24MSG.magic, "WcCf", 4) != 0) {
+        printf(":-----------------------------------------:\n");
+        printf(": Invalid nwc24msg.cfg file.              :\n");
+        printf(":-----------------------------------------:\n\n");
         return -1;
     }
     if (oldChecksum != calculatedChecksum) {
@@ -111,25 +101,19 @@ s32 patchMail() {
     char *response = (char *)malloc(2048);
     error = post_request(url, arg, &response);
 
-    // cURL error code 6 could also mean the host doesn't exists, but we know for a fact it does.
-	if (error == 6) {
-		printf(":--------------------------------------------------------:");
-		printf("\n: There is no Internet connection.                       :");
-		printf("\n: Please check if your Wii is connected to the Internet. :");
-		printf("\n:                                                        :");
-		printf("\n: Could not reach remote host.                           :");
-		printf("\n:--------------------------------------------------------:\n\n");
-		
+	if (error > 0) {
+		printf(":-------------------------------------------------------------:\n");
+		printf(": Failed to send request to the server.                       :\n");
+		printf(": Please check if your Wii is connected to the Internet.      :\n");
+		printf(":                                                             :\n");
+		printf(": %-60s"                                                     ":\n", cURL_GetLastError());
+		printf(":-------------------------------------------------------------:\n\n");
+
+        return error;
 	}
-	if (error < 0) {
+	else if (error < 0) {
 		return error;
 	}
-	if (error < 0 && error != 6) {
-        printf(":-----------------------------------------:\n");
-        printf(" Couldn't request the data: %i\n", error);
-        printf(":-----------------------------------------:\n\n");
-        return error;
-    }
 
     // Parse the response
     struct phr_header headers[10];
