@@ -68,13 +68,7 @@ int main(void) {
         sleep(10);
         exit(0);
     }
-    else if (CheckvWii()) {
-        printf(":---------------------------------------------------------------:\n"
-               ": vWii Detected                                                 :\n"
-               ": This tool will still patch your nwc24msg.cfg, but you will be :\n"
-               ": unable to fully utilize Wii Mail.                             :\n" 
-               ":---------------------------------------------------------------:\n");
-    }
+
     printf("Patching...\n\n");
 
     s64 friendCode = getFriendCode();
